@@ -5,6 +5,8 @@
 
 #include <3ds/types.h>
 
+typedef u64 u64_unaligned __attribute__((aligned(4)));
+
 typedef enum MII_SPECIALNESS_t {
     MII_SPECIAL    = 0,
     MII_NONSPECIAL = 1,
@@ -61,9 +63,13 @@ typedef struct Mii_t {
         };
         u32 mii_id;
     };
-    u32 sys_id;
-
-    u32 _unk_0x08;
+    union {
+        struct {
+            u32 sys_id;
+            u32 _unk_0x08;
+        };
+        u64_unaligned system_id;
+    };
 
     union {
         // This unsigned 32bit integer is stored in big-endian and holds the
