@@ -1,7 +1,7 @@
 /* Normalize_Mii - Fix your Mii
  *
  * This program baased on SpecializeMii
- * (https://github.com/元リポジトリURL)
+ * (https://github.com/phijor/SpecializeMii)
  * Copyright (C) 2016 phijor
  *
  * Modifications:
@@ -164,11 +164,6 @@ void print_usage()
         printf("Press Y to select Mii has blue pants.\n");
         printf("3ds system_id: %llx\n", system_id);
     }
-    printf(":%u\n", msConf.mii_whitelist[0]);
-    printf(":%u\n", msConf.mii_whitelist[1]);
-    printf(":%u\n", msConf.mii_whitelist[2]);
-    printf(":%u\n", msConf.mii_whitelist[3]);
-    printf(":%u\n", msConf.mii_whitelist[4]);
 }
 
 int main(void)
