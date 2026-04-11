@@ -90,10 +90,13 @@
 
 // char miiname[36];
 // char miiauthor[30];
+
+#define MII_HOLDER_SIZE 8
+
 u64 system_id = 0;
 
 u8 mii_pos;
-u8 mii_slots[8];
+u8 mii_slots[MII_HOLDER_SIZE];
 
 CFL_DB db;
 Result res        = 0;
@@ -142,8 +145,10 @@ void setmiiblacklist() {
     for (u8 i = 0; i < mii_count; i++) {
         // check all Miis, user's Mii unselectable
         if (miis[i].system_id == system_id) {
-            // miiSelectorBlacklistUserMii(&msConf, miis[i].position.page*10 + miis[i].position.slot);
             miiSelectorBlacklistUserMii(&msConf, i);
+        } else {
+            // selectable
+            msConf.mii_whitelist[i] = 1;
         }
     }
     
@@ -155,15 +160,21 @@ void setmiiblacklist() {
 
 void print_usage()
 {
-    // printf("\033[2J");
-	printf("Press START to exit.\n"
-        "SELECT to save.\n");
+    printf("\033[2J");
     if (system_id == 0) {
         printf("Press X to select Mii has black pants.\n");
     } else {
         printf("Press Y to select Mii has blue pants.\n");
         printf("3ds system_id: %llx\n", system_id);
+        for (u8 i = 0; i < MII_HOLDER_SIZE; i++) {
+            if (mii_slots[i] == 0) {
+                printf("SLOT [%u/%u] is empty.\n", i+1, MII_HOLDER_SIZE);
+            } else {
+                printf("SLOT [%u/%u] = position %u\n", i+1, MII_HOLDER_SIZE, mii_slots[i]);
+            }
+        }
     }
+    printf("\nSTART to exit.\nSELECT to save.\n");
 }
 
 int main(void)
@@ -180,7 +191,7 @@ int main(void)
 
     // char **miistrings = NULL;
     
-    // setmiiblacklist();
+    setmiiblacklist();
 
     print_usage();
 
@@ -191,22 +202,29 @@ int main(void)
             break;
         }
         // if (kDown & KEY_X)
-        if (system_id == 0 && (kDown & KEY_X))
-		{
-			miiSelectorSetTitle(&msConf, "select your Mii");
-			miiSelectorLaunch(&msConf, &msRet);
-            if (miiSelectorChecksumIsValid(&msRet)) {
-                if (!msRet.no_mii_selected)
-                {
-                    system_id = msRet.mii.system_id;
-                    printf("%llx\n", msRet.mii.system_id);
-                } else {
-                    system_id = 0;
-                }
-
-            }
-            print_usage();
-		}
+        // if (system_id == 0 && (kDown & KEY_X))
+		// {
+		// 	miiSelectorSetTitle(&msConf, "select your Mii");
+		// 	miiSelectorLaunch(&msConf, &msRet);
+        //     if (miiSelectorChecksumIsValid(&msRet)) {
+        //         if (!msRet.no_mii_selected)
+        //         {
+        //             system_id = msRet.mii.system_id;
+        //             for (u8 i = 0; i < MII_HOLDER_SIZE; i++) {
+        //                 if (mii_slots[i] == 0) {
+        //                     break;
+        //                 } else {
+        //                     mii_slots[i] = 0;
+        //                 }
+        //             }
+        //             print_usage();
+        //         } else {
+        //             system_id = 0;
+        //             print_usage();
+        //         }
+        //         setmiiblacklist();
+        //     }
+		// }
 
 		// if (kDown & KEY_Y)
 		if (system_id != 0 && (kDown & KEY_Y))
@@ -224,7 +242,8 @@ int main(void)
                         printf("This Mii is already yours.\n");
                     } else {
                         mii_pos = msRet.mii.mii_pos.page_index*10 + msRet.mii.mii_pos.slot_index+1;
-                        for (u8 i = 0; i < 8; i++) {
+                        printf("%u\n", mii_pos);
+                        for (u8 i = 0; i < MII_HOLDER_SIZE; i++) {
                             if (mii_slots[i] == 0) {
                                 mii_slots[i] = mii_pos;
                                 break;
@@ -232,39 +251,38 @@ int main(void)
                                 break;
                             }
                         }
+                        print_usage();
                     }
                 }
             }
 		}
 
         if (kDown & KEY_SELECT) {
-            bool choice = true;
-            res = cfldb_open(&db);
-            if (R_FAILED(res)) {
-                hang("Failed to open CFL_DB.dat", res);
-            }
-
-            res = cfldb_read(&db);
-            if (R_FAILED(res)) {
-                hang("Failed to read CFL_DB.dat", res);
-            }
-            miis = cfldb_get_mii_array(&db);
-            for(u8 i = 0; i < 8; i++) {
-                if (mii_slots[i] != 0) {
-                    miis[mii_slots[i]-1].sys_id = system_id;
-                    mii_slots[i] = 0;
-                } else {
-                    break;
+            if (system_id != 0) {                
+                res = cfldb_open(&db);
+                if (R_FAILED(res)) {
+                    hang("Failed to open CFL_DB.dat", res);
                 }
-            }
-            if (choice) {                
+                res = cfldb_read(&db);
+                if (R_FAILED(res)) {
+                    hang("Failed to read CFL_DB.dat", res);
+                }
+                miis = cfldb_get_mii_array(&db);
+                for(u8 i = 0; i < MII_HOLDER_SIZE; i++) {
+                    if (mii_slots[i] != 0) {
+                        miis[mii_slots[i]-1].system_id = system_id;
+                        mii_slots[i] = 0;
+                    } else {
+                        break;
+                    }
+                }
                 printf("Writing database... ");
                 cfldb_fix_checksum(&db);
                 Result res = cfldb_write(&db);
                 if (R_FAILED(res)) {
                     hang("Failed to write database", res);
                 }
-                printf("done.");
+                printf("done.\n");
                 res = cfldb_close(&db);
                 if (R_FAILED(res)) {
                     hang("Failed to close CFL_DB.dat", res);
