@@ -243,7 +243,7 @@ int main(void)
                     if (msRet.mii.system_id != system_id) {
                         // mii_pos = msRet.mii.mii_pos.page_index*10 + msRet.mii.mii_pos.slot_index+1;
                         temp_mii_pos.page = msRet.mii.mii_pos.page_index;
-                        temp_mii_pos.slot = msRet.mii.mii_pos.slot_index;
+                        temp_mii_pos.slot = msRet.mii.mii_pos.slot_index+1;
                         for (u8 i = 0; i < MII_HOLDER_SIZE; i++) {
                             if (mii_slots[i].raw == 0) {
                                 mii_slots[i] = temp_mii_pos;
@@ -273,6 +273,7 @@ int main(void)
                 miis = cfldb_get_mii_array(&db);
                 for(u8 i = 0; i < MII_HOLDER_SIZE; i++) {
                     if (mii_slots[i].raw != 0) {
+                        mii_slots[i].slot -= 1;
                         for (u8 j = 0; j < mii_count; j++) {
                             if (miis[j].position.raw != mii_slots[i].raw)
                                 continue;
