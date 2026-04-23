@@ -1,6 +1,6 @@
 /* Normalize_Mii - Fix your Mii
  *
- * This program baased on SpecializeMii
+ * This program based on SpecializeMii
  * (https://github.com/phijor/SpecializeMii)
  * Copyright (C) 2016 phijor
  *
@@ -95,8 +95,11 @@
 
 u64 system_id = 0;
 
+
 u8 mii_pos;
-u8 mii_slots[MII_HOLDER_SIZE];
+
+MiiPosition mii_slots[MII_HOLDER_SIZE];
+MiiPosition temp_mii_pos = {page:0, slot:0};
 
 CFL_DB db;
 Result res        = 0;
@@ -167,10 +170,10 @@ void print_usage()
         printf("Press Y to select Mii has blue pants.\n");
         printf("3ds system_id: %llx\n", system_id);
         for (u8 i = 0; i < MII_HOLDER_SIZE; i++) {
-            if (mii_slots[i] == 0) {
+            if (mii_slots[i].raw == 0) {
                 printf("SLOT [%u/%u] is empty.\n", i+1, MII_HOLDER_SIZE);
             } else {
-                printf("SLOT [%u/%u] = position %u\n", i+1, MII_HOLDER_SIZE, mii_slots[i]);
+                printf("SLOT [%u/%u] = position: %u\n", i+1, MII_HOLDER_SIZE, mii_slots[i].page*10+mii_slots[i].slot);
             }
         }
     }
@@ -191,8 +194,6 @@ int main(void)
 
     // char **miistrings = NULL;
     
-    setmiiblacklist();
-
     print_usage();
 
     while (aptMainLoop()) {
@@ -229,7 +230,8 @@ int main(void)
 		// if (kDown & KEY_Y)
 		if (system_id != 0 && (kDown & KEY_Y))
 		{
-			miiSelectorSetTitle(&msConf, "select Mii not yours");
+            setmiiblacklist();
+            miiSelectorSetTitle(&msConf, "select Mii not yours");
 			miiSelectorLaunch(&msConf, &msRet);
 			if (miiSelectorChecksumIsValid(&msRet)) {
                 // if (system_id == 0)
@@ -238,20 +240,21 @@ int main(void)
                 // } else
                 if (!msRet.no_mii_selected)
                 {
-                    if (msRet.mii.system_id == system_id) {
-                        printf("This Mii is already yours.\n");
-                    } else {
-                        mii_pos = msRet.mii.mii_pos.page_index*10 + msRet.mii.mii_pos.slot_index+1;
-                        printf("%u\n", mii_pos);
+                    if (msRet.mii.system_id != system_id) {
+                        // mii_pos = msRet.mii.mii_pos.page_index*10 + msRet.mii.mii_pos.slot_index+1;
+                        temp_mii_pos.page = msRet.mii.mii_pos.page_index;
+                        temp_mii_pos.slot = msRet.mii.mii_pos.slot_index;
                         for (u8 i = 0; i < MII_HOLDER_SIZE; i++) {
-                            if (mii_slots[i] == 0) {
-                                mii_slots[i] = mii_pos;
+                            if (mii_slots[i].raw == 0) {
+                                mii_slots[i] = temp_mii_pos;
                                 break;
-                            } else if (mii_slots[i] == mii_pos) {
+                            } else if (mii_slots[i].raw == temp_mii_pos.raw) {
                                 break;
                             }
                         }
                         print_usage();
+                    } else {
+                        printf("This Mii is already yours.\n");
                     }
                 }
             }
@@ -269,9 +272,18 @@ int main(void)
                 }
                 miis = cfldb_get_mii_array(&db);
                 for(u8 i = 0; i < MII_HOLDER_SIZE; i++) {
-                    if (mii_slots[i] != 0) {
-                        miis[mii_slots[i]-1].system_id = system_id;
-                        mii_slots[i] = 0;
+                    if (mii_slots[i].raw != 0) {
+                        for (u8 j = 0; j < mii_count; j++) {
+                            if (miis[j].position.raw != mii_slots[i].raw)
+                                continue;
+                            // if (miis[j].position.raw > mii_slots[i].raw)
+                            //     break;
+                            if (miis[j].position.raw == mii_slots[i].raw) {
+                                miis[j].system_id = system_id;
+                                break;
+                            }
+                        }
+                        mii_slots[i].raw = 0;
                     } else {
                         break;
                     }
