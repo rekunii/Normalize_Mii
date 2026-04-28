@@ -1,4 +1,4 @@
-/* Normalize_Mii - Fix your Mii
+/* Normalize_Mii - Everyone your Mii
  *
  * This program based on SpecializeMii
  * (https://github.com/phijor/SpecializeMii)
@@ -21,264 +21,150 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <3ds.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
+ 
+//  #include <3ds.h>
+#include <3ds/applets/miiselector.h>
+#include <3ds/services/apt.h>
+#include <3ds/services/cfgu.h>
+#include <3ds/services/hid.h>
+
+#include <3ds/console.h>
+#include <3ds/gfx.h>
+#include <3ds/os.h>
+#include <3ds/types.h>
 
 #include "cfldb.h"
 #include "crc.h"
 #include "mii.h"
 
-// #define PAGELEN 25
-
-// #define COLORIZE(color, str) "\e[" color "m" str "\e[0m"
-
-// void print_usage()
-// {
-//     PrintConsole *prev = consoleSelect(&c_info);
-//     // clang-format off
-//     printf(APPLICATION_NAME " - " APPLICATION_REV ":\n"
-//             "\n"
-//            "[A]      - Toggle special/non-special\n"
-//            "[<>^v]   - Navigate Mii list\n"
-//            "[SELECT] - Save Changes\n"
-//            "[START]  - Exit\n"
-//            "\n"
-//            "page:slot refers to a Mii's position\n"
-//            "in MiiMaker.\n"
-//            "\n"
-//            "Note that this application currently\n"
-//            "does *not* support  UTF16-symbols in\n"
-//            "names, such as Hiragana, Kanji, etc.\n"
-//            "\n"
-//            COLORIZE("1;31", "Important:\n")
-//            "Setting a special Mii "COLORIZE("33", "*SHAREABLE*")" or\n"
-//            COLORIZE("33", "*COPYABLE*")" in MiiMaker "COLORIZE("33", "*CRASHES*")" the\n"
-//            "system and is generally a bad idea.\n"
-//            "\n"
-//            "I AM NOT RESPONSIBLE FOR EVENTUAL\n"
-//            "DAMAGES TO YOUR SYSTEM OR DATA.\n"
-//            );
-//     // clang-format on
-//     consoleSelect(prev);
-// }
-
-// bool prompt(char const *const msg, char const *const yes, char const *const no)
-// {
-//     printf("\033[2J"
-//            "%s\n"
-//            "[A] - %s\n"
-//            "[B] - %s\n",
-//            msg,
-//            yes,
-//            no);
-//     u32 key_down = 0;
-//     while (aptMainLoop()) {
-//         gspWaitForVBlank();
-//         hidScanInput();
-//         key_down = hidKeysDown();
-
-//         if (key_down & KEY_A) {
-//             return true;
-//         } else if (key_down & KEY_B) {
-//             return false;
-//         }
-//     }
-//     return false;
-// }
-
-
-// char miiname[36];
-// char miiauthor[30];
-
 #define MII_HOLDER_SIZE 8
 
-u64 system_id = 0;
+static CFL_DB db;
+static Mii *miis;
+static int mii_count;
+static MiiSelectorConf msConf;
+static u64 system_id;
 
-
-u8 mii_pos;
-
-MiiPosition mii_slots[MII_HOLDER_SIZE];
-MiiPosition temp_mii_pos = {page:0, slot:0};
-
-CFL_DB db;
-Result res        = 0;
-Mii *miis         = NULL;
-int mii_count     = 0;
-
-MiiSelectorConf msConf;
-MiiSelectorReturn msRet;
-
-void __attribute__((noreturn))
-hang(char const *const desc, Result const errcode)
-{
-    // consoleSelect(&c_info);
-    fprintf(stderr,
+static void res_hang(Result res, const char* action){
+    if (res < 0) {
+        printf(
             "\n"
-            "\033[31mAn error occured!\033[0m\n"
-            "  Description: %s\n"
-            "  Error-Code:  0x%lx\n"
-            "  Error-Info:  %s\n"
-            "\n"
-            "Press START to exit the application.\n",
-            desc,
-            (long int) errcode,
-            osStrError(errcode));
-
-    while (aptMainLoop() && !(hidKeysDown() & KEY_START)) {
-        hidScanInput();
+            "\x1b[31mAn error occured!\x1b[0m\n"
+            "  Description: Failed to %s CFL_DB.dat"
+            "  Code:  0x%lx\n"
+            "\nPress START to exit the application.",
+            action,
+            res
+        );
+        while (aptMainLoop() && !(hidKeysDown() & KEY_START)) {
+            hidScanInput();
+        }
+        gfxExit();
+        exit(res);
     }
-    gfxExit();
-    exit(errcode);
+    return;
 }
 
-void setmiiblacklist() {
-    res = cfldb_open(&db);
-    if (R_FAILED(res)) {
-        hang("Failed to open CFL_DB.dat", res);
-    }
+static inline void cfldb_open_read(void){
+    res_hang(cfldb_open(&db), "open");
+    res_hang(cfldb_read(&db), "read");
+}
 
-    res = cfldb_read(&db);
-    if (R_FAILED(res)) {
-        hang("Failed to read CFL_DB.dat", res);
-    }
-
+static inline void setmiiblacklist(void) {
+    cfldb_open_read();
     miis = cfldb_get_mii_array(&db);
     mii_count = cfldb_get_last_mii_index(&db) + 1;
-    for (u8 i = 0; i < mii_count; i++) {
-        // check all Miis, user's Mii unselectable
+    for (u8 i = 0; i < mii_count; i++) { // check all Miis, user's Mii unselectable
         if (miis[i].system_id == system_id) {
-            miiSelectorBlacklistUserMii(&msConf, i);
+            msConf.mii_whitelist[i] = 0; // unselectable, user can't choose this Mii. same as miiSelectorBlacklistUserMii(&msConf, i);
         } else {
-            // selectable
-            msConf.mii_whitelist[i] = 1;
+            msConf.mii_whitelist[i] = 1; // selectable
         }
     }
-    
-    res = cfldb_close(&db);
-    if (R_FAILED(res)) {
-        hang("Failed to close CFL_DB.dat", res);
-    }
-}
-
-void print_usage()
-{
-    printf("\033[2J");
-    if (system_id == 0) {
-        printf("Press X to select Mii has black pants.\n");
-    } else {
-        printf("Press Y to select Mii has blue pants.\n");
-        printf("3ds system_id: %llx\n", system_id);
-        for (u8 i = 0; i < MII_HOLDER_SIZE; i++) {
-            if (mii_slots[i].raw == 0) {
-                printf("SLOT [%u/%u] is empty.\n", i+1, MII_HOLDER_SIZE);
-            } else {
-                printf("SLOT [%u/%u] = position: %u\n", i+1, MII_HOLDER_SIZE, mii_slots[i].page*10+mii_slots[i].slot);
-            }
-        }
-    }
-    printf("\nSTART to exit.\nSELECT to save.\n");
+    res_hang(cfldb_close(&db), "close");
 }
 
 int main(void)
 {
-    // get 3ds system_id
+    MiiSelectorReturn msRet;
+    MiiPosition mii_slots[MII_HOLDER_SIZE];
+    MiiPosition temp_mii_pos;
+    bool need_blacklist_update = true;
+    bool need_display_slots_refresh = false;
+
     cfguInit();
     CFGU_GenHashConsoleUnique(0x0, &system_id);
+    // system_id = 0x123456789abcdef0; // 動作確認用
 
     gfxInitDefault();
     consoleInit(GFX_TOP, NULL);
 
 	miiSelectorInit(&msConf);
 	miiSelectorSetOptions(&msConf, MIISELECTOR_CANCEL);
-
-    // char **miistrings = NULL;
     
-    print_usage();
+    puts("Press Y to select Mii has blue pants.");
+    printf("3DS system_id: %llx\n\n", system_id);
+    for (u8 i = 0; i < MII_HOLDER_SIZE; i++) {
+        printf("SLOT [%u/%u]\n", i+1, MII_HOLDER_SIZE);
+    }
+    printf("\nSTART to exit.\nSELECT to save.");
 
     while (aptMainLoop()) {
         hidScanInput();
         u32 kDown = hidKeysDown();
-        if (kDown & KEY_START) {
+        if (kDown & KEY_START)
             break;
-        }
-        // if (kDown & KEY_X)
-        // if (system_id == 0 && (kDown & KEY_X))
-		// {
-		// 	miiSelectorSetTitle(&msConf, "select your Mii");
-		// 	miiSelectorLaunch(&msConf, &msRet);
-        //     if (miiSelectorChecksumIsValid(&msRet)) {
-        //         if (!msRet.no_mii_selected)
-        //         {
-        //             system_id = msRet.mii.system_id;
-        //             for (u8 i = 0; i < MII_HOLDER_SIZE; i++) {
-        //                 if (mii_slots[i] == 0) {
-        //                     break;
-        //                 } else {
-        //                     mii_slots[i] = 0;
-        //                 }
-        //             }
-        //             print_usage();
-        //         } else {
-        //             system_id = 0;
-        //             print_usage();
-        //         }
-        //         setmiiblacklist();
-        //     }
-		// }
 
-		// if (kDown & KEY_Y)
 		if (system_id != 0 && (kDown & KEY_Y))
 		{
-            setmiiblacklist();
-            miiSelectorSetTitle(&msConf, "select Mii not yours");
+            if (need_blacklist_update) {
+                setmiiblacklist();
+                need_blacklist_update = false;
+            }
+            miiSelectorSetTitle(&msConf, "select Mii not yours.");
 			miiSelectorLaunch(&msConf, &msRet);
-			if (miiSelectorChecksumIsValid(&msRet)) {
-                // if (system_id == 0)
-                // {
-                //     printf("please select your Mii first.");
-                // } else
-                if (!msRet.no_mii_selected)
-                {
-                    if (msRet.mii.system_id != system_id) {
-                        // mii_pos = msRet.mii.mii_pos.page_index*10 + msRet.mii.mii_pos.slot_index+1;
-                        temp_mii_pos.page = msRet.mii.mii_pos.page_index;
-                        temp_mii_pos.slot = msRet.mii.mii_pos.slot_index+1;
-                        for (u8 i = 0; i < MII_HOLDER_SIZE; i++) {
-                            if (mii_slots[i].raw == 0) {
-                                mii_slots[i] = temp_mii_pos;
-                                break;
-                            } else if (mii_slots[i].raw == temp_mii_pos.raw) {
-                                break;
-                            }
-                        }
-                        print_usage();
-                    } else {
-                        printf("This Mii is already yours.\n");
-                    }
+
+            if (need_display_slots_refresh) {
+                printf("\x1b[3;12H"); // 行3列12に移動
+                for (u8 _ = 0; _ < MII_HOLDER_SIZE; _++) {
+                    printf("\x1b[1B\x1b[K"); // 1行下に移動、カーソルより列後ろ(右側すべて)を削除
                 }
+                need_display_slots_refresh = false;
+            }
+
+            printf("\x1b[15;1H\x1b[2K"); // 行15を削除 ("Writing database..."のところ)
+            if (!msRet.no_mii_selected)
+            {
+                if (msRet.mii.system_id != system_id) {
+                    temp_mii_pos.page = msRet.mii.mii_pos.page_index;
+                    temp_mii_pos.slot = msRet.mii.mii_pos.slot_index+1;
+                    for (u8 i = 0; i < MII_HOLDER_SIZE; i++) {
+                        if (mii_slots[i].raw == 0) {
+                            printf("\x1b[%u;1HSLOT [%u/%u] = position: %u\n",i+4, i+1, MII_HOLDER_SIZE, temp_mii_pos.page*10+temp_mii_pos.slot);
+                            mii_slots[i] = temp_mii_pos;
+                            break;
+                        } else if (mii_slots[i].raw == temp_mii_pos.raw) {
+                            break;
+                        }
+                    }
+                    // printf("\x1b[15;H%llx", msRet.mii.system_id);
+                }
+                // else {
+                //     printf("\x1b[15;1HThis Mii is already yours.");
+                // }
             }
 		}
 
         if (kDown & KEY_SELECT) {
-            if (system_id != 0) {                
-                res = cfldb_open(&db);
-                if (R_FAILED(res)) {
-                    hang("Failed to open CFL_DB.dat", res);
-                }
-                res = cfldb_read(&db);
-                if (R_FAILED(res)) {
-                    hang("Failed to read CFL_DB.dat", res);
-                }
-                miis = cfldb_get_mii_array(&db);
+            if (system_id != 0) {
+                cfldb_open_read();
+                // miis = cfldb_get_mii_array(&db);
                 for(u8 i = 0; i < MII_HOLDER_SIZE; i++) {
                     if (mii_slots[i].raw != 0) {
                         mii_slots[i].slot -= 1;
                         for (u8 j = 0; j < mii_count; j++) {
-                            if (miis[j].position.raw != mii_slots[i].raw)
-                                continue;
-                            // if (miis[j].position.raw > mii_slots[i].raw)
-                            //     break;
                             if (miis[j].position.raw == mii_slots[i].raw) {
                                 miis[j].system_id = system_id;
                                 break;
@@ -289,24 +175,21 @@ int main(void)
                         break;
                     }
                 }
-                printf("Writing database... ");
+                printf("\x1b[15;1HWriting database...");
                 cfldb_fix_checksum(&db);
-                Result res = cfldb_write(&db);
-                if (R_FAILED(res)) {
-                    hang("Failed to write database", res);
-                }
-                printf("done.\n");
-                res = cfldb_close(&db);
-                if (R_FAILED(res)) {
-                    hang("Failed to close CFL_DB.dat", res);
-                }
+                res_hang(cfldb_write(&db), "write");
+                res_hang(cfldb_close(&db), "close");
+                printf(" done.");
+                need_blacklist_update = true;
+                need_display_slots_refresh = true;
+                gfxFlushBuffers(); // 画面の更新用
+                gfxSwapBuffers(); // 画面の更新用
             }
         }
-        gfxFlushBuffers();
+        // gfxFlushBuffers();
 		// gfxSwapBuffers();
-		gspWaitForVBlank();
+		gspWaitForVBlank(); // スリープからの復帰に必要っぽい
     }
-
 
     gfxExit();
     return 0;
