@@ -40,6 +40,10 @@ INCLUDES	:=	include
 GFXBUILD	:=	$(BUILD)
 #ROMFS		:=	romfs
 #GFXBUILD	:=	$(ROMFS)/gfx
+APP_TITLE       :=  Normalize_mii
+APP_DESCRIPTION :=  Normalize_mii
+APP_AUTHOR      :=  Reku
+APP_ICON        :=  $(TOPDIR)/meta/icon.png
 
 #---------------------------------------------------------------------------------
 # options for code generation

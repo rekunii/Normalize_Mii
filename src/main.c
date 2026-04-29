@@ -182,12 +182,10 @@ int main(void)
                 printf(" done.");
                 need_blacklist_update = true;
                 need_display_slots_refresh = true;
-                gfxFlushBuffers(); // 画面の更新用
-                gfxSwapBuffers(); // 画面の更新用
             }
         }
-        // gfxFlushBuffers();
-		// gfxSwapBuffers();
+        gfxFlushBuffers(); // 画面の更新用
+        gfxSwapBuffers(); // 画面の更新用
 		gspWaitForVBlank(); // スリープからの復帰に必要っぽい
     }
 
